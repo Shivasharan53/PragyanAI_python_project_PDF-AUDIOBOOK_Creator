@@ -1,497 +1,539 @@
 import streamlit as st
-import speech_recognition as sr
-from pydub import AudioSegment
+from pypdf import PdfReader
 from gtts import gTTS
-from PyPDF2 import PdfReader
-import tempfile
 import os
-import io
-
+import tempfile
+import re
+import time
 
 # ============================================================
 # PAGE CONFIG
 # ============================================================
 
 st.set_page_config(
-    page_title="PragyanAI - Speech & Audiobook Creator",
-    page_icon="🎙️",
+    page_title="PragyanAI PDF to Audiobook",
+    page_icon="🎧",
     layout="wide"
 )
-
 
 # ============================================================
 # CUSTOM CSS
 # ============================================================
 
-st.markdown("""
-<style>
+st.markdown(
+    """
+    <style>
+    .main-title {
+        font-size: 42px;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 5px;
+    }
 
-.main {
-    padding-top: 1rem;
-}
+    .subtitle {
+        text-align: center;
+        font-size: 18px;
+        color: #777;
+        margin-bottom: 30px;
+    }
 
-.title {
-    text-align: center;
-    font-size: 42px;
-    font-weight: 700;
-}
+    .info-box {
+        padding: 18px;
+        border-radius: 12px;
+        background-color: #f5f7fb;
+        border: 1px solid #e5e7eb;
+        margin-bottom: 20px;
+    }
 
-.subtitle {
-    text-align: center;
-    font-size: 18px;
-    color: #666;
-    margin-bottom: 30px;
-}
-
-.card {
-    padding: 25px;
-    border-radius: 15px;
-    border: 1px solid #ddd;
-    margin-bottom: 20px;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
+    .success-box {
+        padding: 18px;
+        border-radius: 12px;
+        background-color: #ecfdf5;
+        border: 1px solid #10b981;
+        margin-top: 20px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # ============================================================
 # TITLE
 # ============================================================
 
 st.markdown(
-    '<div class="title">🎙️ PragyanAI Speech & Audiobook Creator</div>',
+    '<div class="main-title">🎧 PragyanAI PDF to Audiobook</div>',
     unsafe_allow_html=True
 )
 
 st.markdown(
-    '<div class="subtitle">Convert audio to text and PDF documents into audiobooks</div>',
+    '<div class="subtitle">Convert your PDF documents into MP3 audiobooks</div>',
     unsafe_allow_html=True
 )
 
+st.divider()
 
 # ============================================================
 # SIDEBAR
 # ============================================================
 
-st.sidebar.title("⚙️ Options")
+with st.sidebar:
 
-mode = st.sidebar.radio(
-    "Select Operation",
-    [
-        "🎙️ Audio to Text",
-        "📄 PDF to Audiobook"
-    ]
-)
-
-
-# ============================================================
-# AUDIO TO TEXT
-# ============================================================
-
-if mode == "🎙️ Audio to Text":
-
-    st.header("🎙️ Audio to Text")
-
-    st.info(
-        "Upload an audio file. Microphone recording is not used because "
-        "Streamlit Cloud does not provide a system microphone."
-    )
-
-    uploaded_audio = st.file_uploader(
-        "Upload Audio File",
-        type=[
-            "wav",
-            "mp3",
-            "m4a",
-            "flac",
-            "ogg",
-            "aiff"
-        ]
-    )
+    st.header("⚙️ Options")
 
     language = st.selectbox(
-        "Recognition Language",
-        [
-            ("English (US)", "en-US"),
-            ("English (UK)", "en-GB"),
-            ("Hindi", "hi-IN"),
-            ("Kannada", "kn-IN"),
-            ("Tamil", "ta-IN"),
-            ("Telugu", "te-IN"),
-            ("Spanish", "es-ES"),
-            ("French", "fr-FR"),
-            ("German", "de-DE")
-        ],
-        format_func=lambda x: x[0]
-    )
-
-    if uploaded_audio:
-
-        st.audio(
-            uploaded_audio,
-            format=f"audio/{uploaded_audio.name.split('.')[-1]}"
-        )
-
-        if st.button(
-            "📝 Convert Audio to Text",
-            use_container_width=True
-        ):
-
-            try:
-
-                with st.spinner("Processing audio..."):
-
-                    # Save uploaded file temporarily
-                    input_suffix = os.path.splitext(
-                        uploaded_audio.name
-                    )[1]
-
-                    with tempfile.NamedTemporaryFile(
-                        delete=False,
-                        suffix=input_suffix
-                    ) as temp_input:
-
-                        temp_input.write(
-                            uploaded_audio.read()
-                        )
-
-                        input_path = temp_input.name
-
-
-                    # Convert to WAV
-                    wav_path = input_path + ".wav"
-
-                    audio = AudioSegment.from_file(
-                        input_path
-                    )
-
-                    audio.export(
-                        wav_path,
-                        format="wav"
-                    )
-
-
-                    # Speech Recognition
-                    recognizer = sr.Recognizer()
-
-                    with sr.AudioFile(wav_path) as source:
-
-                        audio_data = recognizer.record(
-                            source
-                        )
-
-
-                    try:
-
-                        text = recognizer.recognize_google(
-                            audio_data,
-                            language=language[1]
-                        )
-
-                    except sr.UnknownValueError:
-
-                        text = (
-                            "Sorry, the audio could not be "
-                            "understood."
-                        )
-
-                    except sr.RequestError as e:
-
-                        text = (
-                            f"Google Speech Recognition error: {e}"
-                        )
-
-
-                st.success("Audio transcription completed!")
-
-                st.subheader("📝 Transcription")
-
-                st.text_area(
-                    "Recognized Text",
-                    text,
-                    height=300
-                )
-
-
-                # Download text
-                st.download_button(
-                    label="⬇️ Download Transcript",
-                    data=text,
-                    file_name="transcript.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
-
-
-                # Cleanup
-                try:
-                    os.remove(input_path)
-                    os.remove(wav_path)
-                except:
-                    pass
-
-
-            except Exception as e:
-
-                st.error(
-                    f"Error processing audio: {e}"
-                )
-
-
-# ============================================================
-# PDF TO AUDIOBOOK
-# ============================================================
-
-elif mode == "📄 PDF to Audiobook":
-
-    st.header("📄 PDF to Audiobook")
-
-    st.write(
-        "Upload a PDF document and convert its text into an MP3 audiobook."
-    )
-
-    uploaded_pdf = st.file_uploader(
-        "Upload PDF",
-        type=["pdf"]
-    )
-
-    language = st.selectbox(
-        "Audio Language",
-        [
+        "🎙️ Voice Language",
+        options=[
             ("English", "en"),
             ("Hindi", "hi"),
             ("Kannada", "kn"),
             ("Tamil", "ta"),
             ("Telugu", "te"),
-            ("Spanish", "es"),
+            ("Malayalam", "ml"),
             ("French", "fr"),
-            ("German", "de")
+            ("German", "de"),
+            ("Spanish", "es"),
+            ("Italian", "it")
         ],
         format_func=lambda x: x[0]
     )
 
-    if uploaded_pdf:
+    language_code = language[1]
 
-        st.success(
-            f"Uploaded: {uploaded_pdf.name}"
+    st.markdown("---")
+
+    st.info(
+        """
+        **How it works**
+
+        1. Upload PDF
+        2. Extract text
+        3. Convert text to speech
+        4. Generate MP3 audiobook
+        5. Download audiobook
+        """
+    )
+
+# ============================================================
+# PDF UPLOAD
+# ============================================================
+
+st.subheader("📄 Upload PDF")
+
+uploaded_file = st.file_uploader(
+    "Choose a PDF document",
+    type=["pdf"],
+    help="Upload a text-based PDF document."
+)
+
+# ============================================================
+# TEXT EXTRACTION
+# ============================================================
+
+def extract_pdf_text(pdf_file):
+
+    reader = PdfReader(pdf_file)
+
+    pages_text = []
+
+    for page in reader.pages:
+
+        try:
+            text = page.extract_text()
+
+            if text:
+                pages_text.append(text)
+
+        except Exception:
+            continue
+
+    return "\n\n".join(pages_text)
+
+
+# ============================================================
+# CLEAN TEXT
+# ============================================================
+
+def clean_text(text):
+
+    # Remove excessive spaces
+    text = re.sub(r"[ \t]+", " ", text)
+
+    # Remove excessive blank lines
+    text = re.sub(r"\n\s*\n+", "\n\n", text)
+
+    # Remove strange control characters
+    text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", text)
+
+    return text.strip()
+
+
+# ============================================================
+# SPLIT TEXT
+# ============================================================
+
+def split_text(text, max_chars=4000):
+
+    paragraphs = text.split("\n\n")
+
+    chunks = []
+    current_chunk = ""
+
+    for paragraph in paragraphs:
+
+        paragraph = paragraph.strip()
+
+        if not paragraph:
+            continue
+
+        # If adding paragraph exceeds limit
+        if len(current_chunk) + len(paragraph) + 1 <= max_chars:
+
+            if current_chunk:
+                current_chunk += "\n\n" + paragraph
+            else:
+                current_chunk = paragraph
+
+        else:
+
+            if current_chunk:
+                chunks.append(current_chunk)
+
+            # Very long paragraph
+            if len(paragraph) > max_chars:
+
+                sentences = re.split(
+                    r"(?<=[.!?])\s+",
+                    paragraph
+                )
+
+                temp = ""
+
+                for sentence in sentences:
+
+                    if len(temp) + len(sentence) + 1 <= max_chars:
+                        temp += " " + sentence
+                    else:
+
+                        if temp:
+                            chunks.append(temp.strip())
+
+                        temp = sentence
+
+                if temp:
+                    current_chunk = temp.strip()
+                else:
+                    current_chunk = ""
+
+            else:
+                current_chunk = paragraph
+
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    return chunks
+
+
+# ============================================================
+# GENERATE AUDIO
+# ============================================================
+
+def generate_audiobook(text, language_code):
+
+    chunks = split_text(text)
+
+    if not chunks:
+        raise ValueError("No readable text found in the PDF.")
+
+    temp_dir = tempfile.mkdtemp()
+
+    audio_files = []
+
+    progress_bar = st.progress(0)
+
+    status_text = st.empty()
+
+    total_chunks = len(chunks)
+
+    for index, chunk in enumerate(chunks):
+
+        status_text.info(
+            f"🎙️ Generating audio part {index + 1} of {total_chunks}..."
         )
 
-        if st.button(
-            "📖 Extract PDF Text",
-            use_container_width=True
-        ):
+        output_file = os.path.join(
+            temp_dir,
+            f"part_{index + 1}.mp3"
+        )
+
+        try:
+
+            tts = gTTS(
+                text=chunk,
+                lang=language_code,
+                slow=False
+            )
+
+            tts.save(output_file)
+
+            audio_files.append(output_file)
+
+        except Exception as e:
+
+            raise RuntimeError(
+                f"Error generating audio part {index + 1}: {e}"
+            )
+
+        progress_bar.progress(
+            (index + 1) / total_chunks
+        )
+
+        # Small delay to avoid aggressive requests
+        time.sleep(0.3)
+
+    status_text.info("🔄 Combining audiobook parts...")
+
+    # ========================================================
+    # COMBINE MP3 FILES WITHOUT FFMPEG / FFPROBE
+    # ========================================================
+
+    final_file = os.path.join(
+        temp_dir,
+        "PragyanAI_Audiobook.mp3"
+    )
+
+    with open(final_file, "wb") as final_audio:
+
+        for audio_file in audio_files:
+
+            with open(audio_file, "rb") as part:
+
+                final_audio.write(part.read())
+
+    status_text.success("✅ Audiobook generated successfully!")
+
+    progress_bar.progress(1.0)
+
+    return final_file
+
+
+# ============================================================
+# MAIN APPLICATION
+# ============================================================
+
+if uploaded_file is not None:
+
+    st.success(
+        f"📄 Uploaded: **{uploaded_file.name}**"
+    )
+
+    # --------------------------------------------------------
+    # PDF DETAILS
+    # --------------------------------------------------------
+
+    file_size = uploaded_file.size / 1024
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "📦 File Size",
+            f"{file_size:.1f} KB"
+        )
+
+    with col2:
+        st.metric(
+            "📄 File Type",
+            "PDF"
+        )
+
+    with col3:
+        st.metric(
+            "🎙️ Language",
+            language[0]
+        )
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # EXTRACT TEXT BUTTON
+    # --------------------------------------------------------
+
+    if st.button(
+        "📖 Extract PDF Text",
+        use_container_width=True
+    ):
+
+        with st.spinner("📖 Reading PDF..."):
 
             try:
 
-                reader = PdfReader(
-                    uploaded_pdf
+                extracted_text = extract_pdf_text(
+                    uploaded_file
                 )
 
-                pages = []
-
-                for page in reader.pages:
-
-                    text = page.extract_text()
-
-                    if text:
-                        pages.append(text)
-
-
-                full_text = "\n\n".join(
-                    pages
+                extracted_text = clean_text(
+                    extracted_text
                 )
 
-
-                if not full_text.strip():
+                if not extracted_text:
 
                     st.error(
-                        "No readable text was found in this PDF."
+                        "❌ No readable text found in this PDF."
+                    )
+
+                    st.warning(
+                        "This may be a scanned/image-only PDF. "
+                        "OCR is required for scanned PDFs."
                     )
 
                 else:
 
+                    st.session_state["pdf_text"] = extracted_text
+
                     st.success(
-                        "PDF text extracted successfully!"
+                        "✅ PDF text extracted successfully!"
                     )
-
-                    st.session_state["pdf_text"] = full_text
-
 
             except Exception as e:
 
                 st.error(
-                    f"PDF extraction error: {e}"
+                    f"❌ Error reading PDF: {e}"
                 )
 
 
-    # --------------------------------------------------------
-    # DISPLAY EXTRACTED TEXT
-    # --------------------------------------------------------
+# ============================================================
+# DISPLAY EXTRACTED TEXT
+# ============================================================
 
-    if "pdf_text" in st.session_state:
+if "pdf_text" in st.session_state:
 
-        text = st.session_state["pdf_text"]
+    text = st.session_state["pdf_text"]
 
-        st.subheader("📖 Extracted Text")
+    st.subheader("📖 Extracted Text")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric(
+            "Characters",
+            f"{len(text):,}"
+        )
+
+    with col2:
+        st.metric(
+            "Words",
+            f"{len(text.split()):,}"
+        )
+
+    with st.expander(
+        "👀 Preview Extracted Text",
+        expanded=True
+    ):
+
+        preview_text = text[:15000]
 
         st.text_area(
             "PDF Content",
-            text,
-            height=400
+            preview_text,
+            height=350
         )
 
-        st.write(
-            f"Characters: {len(text):,}"
+        if len(text) > 15000:
+
+            st.info(
+                f"Showing first 15,000 characters "
+                f"out of {len(text):,} characters."
+            )
+
+    st.divider()
+
+    # ========================================================
+    # GENERATE AUDIO BUTTON
+    # ========================================================
+
+    st.subheader("🎧 Create Audiobook")
+
+    st.write(
+        "Convert the extracted PDF text into an MP3 audiobook."
+    )
+
+    if st.button(
+        "🎙️ Generate Audiobook",
+        type="primary",
+        use_container_width=True
+    ):
+
+        try:
+
+            final_audio = generate_audiobook(
+                text,
+                language_code
+            )
+
+            # Store path
+            st.session_state["audio_file"] = final_audio
+
+        except Exception as e:
+
+            st.error(
+                f"❌ Audiobook generation error: {e}"
+            )
+
+
+# ============================================================
+# AUDIO RESULT
+# ============================================================
+
+if "audio_file" in st.session_state:
+
+    audio_file = st.session_state["audio_file"]
+
+    if os.path.exists(audio_file):
+
+        st.divider()
+
+        st.subheader("🎧 Your Audiobook")
+
+        st.success(
+            "✅ Your PDF has been converted into an audiobook!"
         )
 
+        # Audio player
+        with open(audio_file, "rb") as audio:
 
-        # ----------------------------------------------------
-        # CREATE AUDIOBOOK
-        # ----------------------------------------------------
+            audio_bytes = audio.read()
 
-        if st.button(
-            "🎧 Create Audiobook",
+        st.audio(
+            audio_bytes,
+            format="audio/mp3"
+        )
+
+        st.download_button(
+            label="⬇️ Download MP3 Audiobook",
+            data=audio_bytes,
+            file_name="PragyanAI_Audiobook.mp3",
+            mime="audio/mpeg",
             use_container_width=True
-        ):
+        )
 
-            try:
-
-                with st.spinner(
-                    "Generating audiobook..."
-                ):
-
-                    # gTTS has practical text-size limitations,
-                    # so split large documents into chunks.
-                    chunk_size = 4000
-
-                    chunks = [
-                        text[i:i + chunk_size]
-                        for i in range(
-                            0,
-                            len(text),
-                            chunk_size
-                        )
-                    ]
-
-
-                    audio_parts = []
-
-                    for index, chunk in enumerate(chunks):
-
-                        st.write(
-                            f"Generating audio part "
-                            f"{index + 1} of {len(chunks)}..."
-                        )
-
-                        tts = gTTS(
-                            text=chunk,
-                            lang=language[1],
-                            slow=False
-                        )
-
-                        temp_mp3 = tempfile.NamedTemporaryFile(
-                            delete=False,
-                            suffix=".mp3"
-                        )
-
-                        temp_mp3.close()
-
-                        tts.save(
-                            temp_mp3.name
-                        )
-
-                        audio_parts.append(
-                            temp_mp3.name
-                        )
-
-
-                    # Combine MP3 files
-                    combined = AudioSegment.empty()
-
-                    for audio_file in audio_parts:
-
-                        segment = AudioSegment.from_mp3(
-                            audio_file
-                        )
-
-                        combined += segment
-
-
-                    output_file = tempfile.NamedTemporaryFile(
-                        delete=False,
-                        suffix=".mp3"
-                    )
-
-                    output_file.close()
-
-
-                    combined.export(
-                        output_file.name,
-                        format="mp3"
-                    )
-
-
-                    with open(
-                        output_file.name,
-                        "rb"
-                    ) as f:
-
-                        audiobook_data = f.read()
-
-
-                st.success(
-                    "🎉 Audiobook created successfully!"
-                )
-
-                st.audio(
-                    audiobook_data,
-                    format="audio/mp3"
-                )
-
-
-                st.download_button(
-                    label="⬇️ Download Audiobook",
-                    data=audiobook_data,
-                    file_name="pragyanai_audiobook.mp3",
-                    mime="audio/mpeg",
-                    use_container_width=True
-                )
-
-
-                # Cleanup
-                for audio_file in audio_parts:
-
-                    try:
-                        os.remove(audio_file)
-                    except:
-                        pass
-
-
-                try:
-                    os.remove(output_file.name)
-                except:
-                    pass
-
-
-            except Exception as e:
-
-                st.error(
-                    f"Audiobook generation error: {e}"
-                )
-
+        st.markdown(
+            """
+            <div class="success-box">
+            <b>🎉 Audiobook Ready!</b><br>
+            You can listen to it above or download the MP3 file.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 # ============================================================
 # FOOTER
 # ============================================================
 
-st.markdown("---")
+st.divider()
 
-st.markdown(
-    """
-    <div style="text-align:center;">
-        <b>PragyanAI</b> | Speech & Audiobook Creator<br>
-        Built with Python + Streamlit
-    </div>
-    """,
-    unsafe_allow_html=True
+st.caption(
+    "🎧 PragyanAI PDF to Audiobook Creator | "
+    "PDF → Text → Speech → MP3"
 )
