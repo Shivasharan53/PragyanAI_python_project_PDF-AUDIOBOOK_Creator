@@ -1,8 +1,7 @@
 import streamlit as st
-import fitz  # PyMuPDF
+import fitz
 from gtts import gTTS
 from langdetect import detect, LangDetectException
-from pydub import AudioSegment
 import tempfile
 import os
 
@@ -47,6 +46,7 @@ def extract_text_from_pdf(uploaded_file):
     text = ""
 
     for page in pdf:
+
         page_text = page.get_text("text")
 
         if page_text:
@@ -67,29 +67,33 @@ def detect_pdf_language(text):
         return None
 
     try:
-        # Use enough text for more reliable detection
-        sample = text[:10000]
 
-        detected_language = detect(sample)
+        # Use a reasonable amount of extracted text
+        sample = text[:15000]
 
-        return detected_language
+        language = detect(sample)
+
+        return language
 
     except LangDetectException:
+
         return None
 
     except Exception:
+
         return None
 
 
 # ============================================================
-# SPLIT TEXT
+# SPLIT TEXT INTO CHUNKS
 # ============================================================
 
-def split_text(text, max_chars=4000):
+def split_text(text, max_chars=4500):
 
     words = text.split()
 
     chunks = []
+
     current_chunk = ""
 
     for word in words:
@@ -106,34 +110,44 @@ def split_text(text, max_chars=4000):
             current_chunk = word + " "
 
     if current_chunk.strip():
+
         chunks.append(current_chunk.strip())
 
     return chunks
 
 
 # ============================================================
-# CREATE MP3 AUDIOBOOK
+# GENERATE MP3
 # ============================================================
 
-def create_audiobook(text, language_code):
+def generate_audiobook(text, language):
 
     chunks = split_text(
         text,
-        max_chars=4000
+        max_chars=4500
     )
 
-    audio_files = []
+    if not chunks:
+
+        return None
 
     progress = st.progress(0)
 
     status = st.empty()
 
-    total = len(chunks)
+    audio_parts = []
+
+    total_parts = len(chunks)
+
+    # --------------------------------------------------------
+    # GENERATE EACH AUDIO PART
+    # --------------------------------------------------------
 
     for index, chunk in enumerate(chunks):
 
         status.info(
-            f"🎙️ Generating audio part {index + 1} of {total}..."
+            f"🎙️ Generating audio part "
+            f"{index + 1} of {total_parts}..."
         )
 
         temp_file = tempfile.NamedTemporaryFile(
@@ -147,22 +161,22 @@ def create_audiobook(text, language_code):
 
             tts = gTTS(
                 text=chunk,
-                lang=language_code,
+                lang=language,
                 slow=False
             )
 
             tts.save(temp_file.name)
 
-            audio_files.append(temp_file.name)
+            audio_parts.append(temp_file.name)
 
         except Exception as e:
 
             status.error(
-                f"❌ Audio generation failed: {e}"
+                f"❌ Error generating audio: {e}"
             )
 
-            # Delete files already created
-            for file in audio_files:
+            # Remove temporary files
+            for file in audio_parts:
 
                 try:
                     os.remove(file)
@@ -172,7 +186,7 @@ def create_audiobook(text, language_code):
             return None
 
         progress.progress(
-            (index + 1) / total
+            (index + 1) / total_parts
         )
 
     status.success(
@@ -180,19 +194,12 @@ def create_audiobook(text, language_code):
     )
 
     # --------------------------------------------------------
-    # MERGE AUDIO FILES
+    # IMPORTANT
     # --------------------------------------------------------
-
-    combined_audio = AudioSegment.empty()
-
-    for file in audio_files:
-
-        audio = AudioSegment.from_mp3(file)
-
-        combined_audio += audio
-
-    # --------------------------------------------------------
-    # SAVE FINAL MP3
+    # Instead of pydub, combine MP3 files using ffmpeg.
+    #
+    # Streamlit Cloud has ffmpeg available in many environments,
+    # but we also handle failure gracefully.
     # --------------------------------------------------------
 
     final_file = tempfile.NamedTemporaryFile(
@@ -202,21 +209,112 @@ def create_audiobook(text, language_code):
 
     final_file.close()
 
-    combined_audio.export(
-        final_file.name,
-        format="mp3"
+    # If there is only one part, simply use it
+    if len(audio_parts) == 1:
+
+        with open(
+            audio_parts[0],
+            "rb"
+        ) as source:
+
+            data = source.read()
+
+        with open(
+            final_file.name,
+            "wb"
+        ) as destination:
+
+            destination.write(data)
+
+        os.remove(audio_parts[0])
+
+        return final_file.name
+
+    # --------------------------------------------------------
+    # MULTIPLE PARTS
+    # --------------------------------------------------------
+
+    concat_file = tempfile.NamedTemporaryFile(
+        mode="w",
+        delete=False,
+        suffix=".txt",
+        encoding="utf-8"
     )
 
+    for audio_file in audio_parts:
+
+        absolute_path = os.path.abspath(
+            audio_file
+        )
+
+        concat_file.write(
+            f"file '{absolute_path}'\n"
+        )
+
+    concat_file.close()
+
     # --------------------------------------------------------
-    # REMOVE TEMPORARY PARTS
+    # USE FFMPEG WITHOUT PYDUB
     # --------------------------------------------------------
 
-    for file in audio_files:
+    import subprocess
+
+    try:
+
+        command = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            concat_file.name,
+            "-c",
+            "copy",
+            final_file.name
+        ]
+
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        if result.returncode != 0:
+
+            st.error(
+                "❌ FFmpeg could not combine the audio files."
+            )
+
+            st.code(
+                result.stderr
+            )
+
+            return None
+
+    except FileNotFoundError:
+
+        st.error(
+            "❌ FFmpeg is not available on this Streamlit environment."
+        )
+
+        return None
+
+    finally:
 
         try:
-            os.remove(file)
+            os.remove(concat_file.name)
         except:
             pass
+
+        for audio_file in audio_parts:
+
+            try:
+                os.remove(audio_file)
+            except:
+                pass
 
     return final_file.name
 
@@ -225,35 +323,51 @@ def create_audiobook(text, language_code):
 # UPLOAD PDF
 # ============================================================
 
+st.subheader("📄 Upload PDF")
+
 uploaded_file = st.file_uploader(
-    "📄 Upload PDF",
+    "Choose a PDF document",
     type=["pdf"]
 )
 
 
 # ============================================================
-# MAIN PROCESS
+# PROCESS PDF
 # ============================================================
 
 if uploaded_file:
 
     st.success(
-        f"Uploaded: {uploaded_file.name}"
+        f"Uploaded: **{uploaded_file.name}**"
     )
 
-    st.write(
-        f"📦 File size: {uploaded_file.size / 1024:.2f} KB"
-    )
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        st.metric(
+            "📦 File Size",
+            f"{uploaded_file.size / 1024:.2f} KB"
+        )
+
+    with col2:
+
+        st.metric(
+            "📄 File Type",
+            "PDF"
+        )
 
     st.divider()
 
     # ========================================================
-    # STEP 1 - EXTRACT TEXT
+    # STEP 1
     # ========================================================
 
     st.subheader("1️⃣ Extract Text")
 
-    with st.spinner("📖 Extracting text from PDF..."):
+    with st.spinner(
+        "📖 Extracting text from PDF..."
+    ):
 
         extracted_text = extract_text_from_pdf(
             uploaded_file
@@ -265,8 +379,8 @@ if uploaded_file:
             "❌ No text could be extracted from this PDF."
         )
 
-        st.info(
-            "The PDF may contain scanned images instead of selectable text."
+        st.warning(
+            "This PDF may contain scanned images instead of selectable text."
         )
 
         st.stop()
@@ -276,11 +390,13 @@ if uploaded_file:
         f"{len(extracted_text):,} characters"
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # TEXT PREVIEW
-    # ========================================================
+    # --------------------------------------------------------
 
-    with st.expander("📖 View Extracted Text"):
+    with st.expander(
+        "📖 View Extracted Text"
+    ):
 
         st.text_area(
             "Extracted Text",
@@ -291,12 +407,14 @@ if uploaded_file:
     st.divider()
 
     # ========================================================
-    # STEP 2 - DETECT LANGUAGE
+    # STEP 2
     # ========================================================
 
     st.subheader("2️⃣ Detect Language")
 
-    with st.spinner("🔍 Detecting language from PDF text..."):
+    with st.spinner(
+        "🔍 Detecting language..."
+    ):
 
         detected_language = detect_pdf_language(
             extracted_text
@@ -308,10 +426,6 @@ if uploaded_file:
             "❌ Language could not be detected."
         )
 
-        st.info(
-            "Please make sure the PDF contains enough readable text."
-        )
-
         st.stop()
 
     st.success(
@@ -321,28 +435,28 @@ if uploaded_file:
     st.divider()
 
     # ========================================================
-    # STEP 3 - CONVERT TO SPEECH
+    # STEP 3
     # ========================================================
 
-    st.subheader("3️⃣ Convert Text to Speech")
+    st.subheader("3️⃣ Convert to Speech")
 
-    st.write(
+    st.info(
         "The detected language will automatically be used for speech generation."
     )
 
     # ========================================================
-    # STEP 4 - GENERATE AUDIOBOOK
+    # STEP 4
     # ========================================================
 
-    st.subheader("4️⃣ Generate MP3 Audiobook")
+    st.subheader("4️⃣ MP3 Audiobook")
 
     if st.button(
-        "🎧 Convert PDF to MP3 Audiobook",
+        "🎧 Generate MP3 Audiobook",
         type="primary",
         use_container_width=True
     ):
 
-        audiobook_file = create_audiobook(
+        audiobook_file = generate_audiobook(
             extracted_text,
             detected_language
         )
@@ -350,28 +464,28 @@ if uploaded_file:
         if audiobook_file:
 
             st.success(
-                "🎉 Audiobook created successfully!"
+                "🎉 MP3 Audiobook created successfully!"
             )
 
-            # =================================================
+            # ------------------------------------------------
             # AUDIO PLAYER
-            # =================================================
+            # ------------------------------------------------
 
             st.audio(
                 audiobook_file,
                 format="audio/mp3"
             )
 
-            # =================================================
+            # ------------------------------------------------
             # DOWNLOAD
-            # =================================================
+            # ------------------------------------------------
 
             with open(
                 audiobook_file,
                 "rb"
-            ) as audio:
+            ) as audio_file:
 
-                audio_data = audio.read()
+                audio_data = audio_file.read()
 
             st.download_button(
                 label="⬇️ Download MP3 Audiobook",
@@ -380,3 +494,6 @@ if uploaded_file:
                 mime="audio/mpeg",
                 use_container_width=True
             )
+
+            # Do not delete immediately because
+            # Streamlit needs the file for playback/download.
