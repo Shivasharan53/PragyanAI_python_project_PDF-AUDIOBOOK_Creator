@@ -1,8 +1,8 @@
 import streamlit as st
 from pypdf import PdfReader
 from gtts import gTTS
-import tempfile
-import os
+from langdetect import detect, LangDetectException
+from io import BytesIO
 import re
 
 
@@ -11,9 +11,10 @@ import re
 # ============================================================
 
 st.set_page_config(
-    page_title="PragyanAI PDF Audiobook",
+    page_title="PragyanAI PDF Audiobook Creator",
     page_icon="🎧",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 
@@ -25,63 +26,258 @@ st.markdown(
     """
     <style>
 
+    /* ---------- MAIN PAGE ---------- */
+
     .stApp {
-        background: #F1F5F9;
+        background: linear-gradient(
+            135deg,
+            #f8fbff 0%,
+            #eef5ff 45%,
+            #f7f3ff 100%
+        );
     }
 
-    .main-title {
-        font-size: 42px;
+    .block-container {
+        max-width: 1250px;
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+    }
+
+
+    /* ---------- HEADER ---------- */
+
+    .main-header {
+        background: linear-gradient(
+            135deg,
+            #4f46e5,
+            #7c3aed,
+            #9333ea
+        );
+
+        padding: 32px 38px;
+        border-radius: 24px;
+        color: white;
+        margin-bottom: 28px;
+
+        box-shadow:
+            0 12px 35px rgba(79, 70, 229, 0.25);
+    }
+
+    .main-header h1 {
+        font-size: 38px;
         font-weight: 800;
-        margin-bottom: 5px;
+        margin: 0;
+        letter-spacing: -1px;
     }
 
-    .subtitle {
-        font-size: 18px;
-        color: #667085;
-        margin-bottom: 30px;
+    .main-header p {
+        font-size: 17px;
+        margin-top: 10px;
+        margin-bottom: 0;
+        opacity: 0.92;
     }
 
-    .feature-card {
-        background: Black;
-        padding: 22px;
-        border-radius: 16px;
-        border: 1px solid #e4e7ec;
-        margin-bottom: 20px;
-    }
+
+    /* ---------- STEP CARDS ---------- */
 
     .step-card {
-        background: Black;
-        padding: 18px;
-        border-radius: 14px;
-        border: 1px solid #e4e7ec;
+        background: white;
+        border-radius: 18px;
+        padding: 20px;
         text-align: center;
+        min-height: 125px;
+
+        border: 1px solid #e5e7eb;
+
+        box-shadow:
+            0 6px 18px rgba(15, 23, 42, 0.06);
     }
 
     .step-number {
-        font-size: 28px;
+        font-size: 13px;
         font-weight: 800;
+        color: #6366f1;
+        letter-spacing: 1px;
+    }
+
+    .step-icon {
+        font-size: 27px;
+        margin: 8px 0;
     }
 
     .step-title {
-        font-size: 17px;
+        font-size: 15px;
         font-weight: 700;
-        margin-top: 5px;
+        color: #1e293b;
     }
 
-    .info-box {
-        background: #eef4ff;
-        border-left: 5px solid #4f46e5;
-        padding: 15px;
-        border-radius: 8px;
-        margin: 15px 0;
+
+    /* ---------- SECTION TITLE ---------- */
+
+    .section-title {
+        color: #172554;
+        font-size: 25px;
+        font-weight: 800;
+        margin-top: 25px;
+        margin-bottom: 8px;
     }
+
+    .section-subtitle {
+        color: #64748b;
+        font-size: 15px;
+        margin-bottom: 18px;
+    }
+
+
+    /* ---------- UPLOAD BOX ---------- */
+
+    .upload-title {
+        background: linear-gradient(
+            135deg,
+            #ffffff,
+            #f8faff
+        );
+
+        border: 2px dashed #818cf8;
+        border-radius: 20px;
+        padding: 30px;
+
+        text-align: center;
+
+        box-shadow:
+            0 8px 25px rgba(79, 70, 229, 0.08);
+    }
+
+    .upload-icon {
+        font-size: 48px;
+        margin-bottom: 8px;
+    }
+
+    .upload-heading {
+        color: #312e81;
+        font-size: 25px;
+        font-weight: 800;
+    }
+
+    .upload-text {
+        color: #64748b;
+        font-size: 15px;
+    }
+
+
+    /* ---------- INFORMATION CARDS ---------- */
+
+    .info-card {
+        background: white;
+        border-radius: 18px;
+        padding: 22px;
+
+        border: 1px solid #e2e8f0;
+
+        box-shadow:
+            0 6px 20px rgba(15, 23, 42, 0.06);
+    }
+
+    .info-label {
+        color: #64748b;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+
+    .info-value {
+        color: #172554;
+        font-size: 18px;
+        font-weight: 800;
+    }
+
+
+    /* ---------- SUCCESS BOX ---------- */
 
     .success-box {
-        background: #ecfdf3;
-        border-left: 5px solid #12b76a;
-        padding: 15px;
-        border-radius: 8px;
-        margin: 15px 0;
+        background: linear-gradient(
+            135deg,
+            #ecfdf5,
+            #f0fdf4
+        );
+
+        border: 1px solid #86efac;
+        border-radius: 18px;
+        padding: 22px;
+        margin-top: 20px;
+    }
+
+    .success-title {
+        color: #166534;
+        font-size: 22px;
+        font-weight: 800;
+    }
+
+    .success-text {
+        color: #15803d;
+        font-size: 15px;
+    }
+
+
+    /* ---------- TEXT PREVIEW ---------- */
+
+    .preview-box {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        padding: 20px;
+        margin-top: 20px;
+    }
+
+
+    /* ---------- SIDEBAR ---------- */
+
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(
+            180deg,
+            #111827,
+            #1e1b4b
+        );
+    }
+
+    section[data-testid="stSidebar"] * {
+        color: white;
+    }
+
+
+    /* ---------- BUTTON ---------- */
+
+    .stDownloadButton button {
+        width: 100%;
+        border-radius: 12px;
+        background: linear-gradient(
+            135deg,
+            #4f46e5,
+            #7c3aed
+        );
+        color: white;
+        border: none;
+        font-weight: 700;
+        padding: 12px;
+    }
+
+    .stDownloadButton button:hover {
+        background: linear-gradient(
+            135deg,
+            #4338ca,
+            #6d28d9
+        );
+        color: white;
+    }
+
+
+    /* ---------- FOOTER ---------- */
+
+    .footer {
+        text-align: center;
+        margin-top: 45px;
+        color: #64748b;
+        font-size: 14px;
     }
 
     </style>
@@ -91,141 +287,85 @@ st.markdown(
 
 
 # ============================================================
-# LANGUAGE DETECTION
+# LANGUAGE MAPPING
 # ============================================================
 
-def detect_language(text):
-    """
-    Detect the dominant language based on Unicode characters.
-
-    Returns a gTTS language code.
-    """
-
-    if not text or not text.strip():
-        return None
-
-    # Kannada Unicode range
-    kannada_count = len(
-        re.findall(r"[\u0C80-\u0CFF]", text)
-    )
-
-    # Hindi / Devanagari Unicode range
-    devanagari_count = len(
-        re.findall(r"[\u0900-\u097F]", text)
-    )
-
-    # Telugu Unicode range
-    telugu_count = len(
-        re.findall(r"[\u0C00-\u0C7F]", text)
-    )
-
-    # Tamil Unicode range
-    tamil_count = len(
-        re.findall(r"[\u0B80-\u0BFF]", text)
-    )
-
-    # Malayalam Unicode range
-    malayalam_count = len(
-        re.findall(r"[\u0D00-\u0D7F]", text)
-    )
-
-    # Bengali Unicode range
-    bengali_count = len(
-        re.findall(r"[\u0980-\u09FF]", text)
-    )
-
-    counts = {
-        "kn": kannada_count,
-        "hi": devanagari_count,
-        "te": telugu_count,
-        "ta": tamil_count,
-        "ml": malayalam_count,
-        "bn": bengali_count
-    }
-
-    detected_language = max(
-        counts,
-        key=counts.get
-    )
-
-    highest_count = counts[detected_language]
-
-    # If no Indian script is detected,
-    # use English as the default.
-    if highest_count == 0:
-        return "en"
-
-    return detected_language
+LANGUAGE_NAMES = {
+    "en": "English",
+    "kn": "Kannada",
+    "hi": "Hindi",
+    "te": "Telugu",
+    "ta": "Tamil",
+    "ml": "Malayalam",
+    "mr": "Marathi",
+    "gu": "Gujarati",
+    "bn": "Bengali",
+    "pa": "Punjabi",
+    "ur": "Urdu",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "zh-cn": "Chinese"
+}
 
 
 # ============================================================
-# PDF TEXT EXTRACTION
+# SIDEBAR
 # ============================================================
 
-def extract_text_from_pdf(uploaded_file):
+with st.sidebar:
 
-    reader = PdfReader(uploaded_file)
-
-    pages_text = []
-
-    for page in reader.pages:
-
-        text = page.extract_text()
-
-        if text:
-            pages_text.append(text)
-
-    final_text = "\n\n".join(pages_text)
-
-    return final_text.strip()
-
-
-# ============================================================
-# CLEAN TEXT
-# ============================================================
-
-def clean_text(text):
-
-    # Remove excessive spaces
-    text = re.sub(r"[ \t]+", " ", text)
-
-    # Remove excessive blank lines
-    text = re.sub(r"\n{3,}", "\n\n", text)
-
-    return text.strip()
-
-
-# ============================================================
-# CREATE AUDIO
-# ============================================================
-
-def create_audio(text, language):
-
-    temp_file = tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=".mp3"
+    st.markdown(
+        """
+        <div style="text-align:center; padding:10px;">
+            <div style="font-size:50px;">🎧</div>
+            <h2>PragyanAI</h2>
+            <p style="color:#c7d2fe;">
+                PDF Audiobook Creator
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
     )
 
-    temp_file.close()
+    st.markdown("---")
 
-    try:
+    st.markdown("### 📌 How it works")
 
-        speech = gTTS(
-            text=text,
-            lang=language,
-            slow=False
-        )
+    st.markdown(
+        """
+        **01** 📄 Upload PDF
 
-        speech.save(temp_file.name)
+        **02** 📝 Extract Text
 
-        return temp_file.name
+        **03** 🌐 Detect Language
 
-    except Exception as error:
+        **04** 🎙️ Generate Speech
 
-        if os.path.exists(temp_file.name):
-            os.remove(temp_file.name)
+        **05** 🎧 Download MP3
+        """
+    )
 
-        raise error
+    st.markdown("---")
+
+    st.markdown("### ✨ Features")
+
+    st.markdown(
+        """
+        ✅ Automatic language detection  
+        ✅ No translation  
+        ✅ PDF text extraction  
+        ✅ MP3 audiobook  
+        ✅ Kannada support  
+        ✅ English support  
+        ✅ Simple download
+        """
+    )
 
 
 # ============================================================
@@ -233,365 +373,519 @@ def create_audio(text, language):
 # ============================================================
 
 st.markdown(
-    '<div class="main-title">🎧 PragyanAI PDF Audiobook</div>',
+    """
+    <div class="main-header">
+
+        <h1>🎧 PragyanAI PDF Audiobook Creator</h1>
+
+        <p>
+            Convert your PDF documents into downloadable MP3 audiobooks
+            using automatic language detection.
+        </p>
+
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
+# WORKFLOW
+# ============================================================
+
+step1, step2, step3, step4 = st.columns(4)
+
+with step1:
+    st.markdown(
+        """
+        <div class="step-card">
+            <div class="step-number">STEP 01</div>
+            <div class="step-icon">📄</div>
+            <div class="step-title">Upload PDF</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with step2:
+    st.markdown(
+        """
+        <div class="step-card">
+            <div class="step-number">STEP 02</div>
+            <div class="step-icon">📝</div>
+            <div class="step-title">Extract Text</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with step3:
+    st.markdown(
+        """
+        <div class="step-card">
+            <div class="step-number">STEP 03</div>
+            <div class="step-icon">🌐</div>
+            <div class="step-title">Detect Language</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with step4:
+    st.markdown(
+        """
+        <div class="step-card">
+            <div class="step-number">STEP 04</div>
+            <div class="step-icon">🎧</div>
+            <div class="step-title">Create MP3</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+# ============================================================
+# UPLOAD SECTION
+# ============================================================
+
+st.markdown(
+    '<div class="section-title">📄 Upload Your PDF</div>',
     unsafe_allow_html=True
 )
 
 st.markdown(
-    '<div class="subtitle">'
-    'Convert any text-based PDF into a downloadable MP3 audiobook'
-    '</div>',
+    """
+    <div class="section-subtitle">
+        Upload a text-based PDF and convert it directly into an audiobook.
+        No translation is performed.
+    </div>
+    """,
     unsafe_allow_html=True
 )
 
 
-# ============================================================
-# PROCESS FLOW
-# ============================================================
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.markdown(
-        """
-        <div class="step-card">
-            <div class="step-number">01</div>
-            <div class="step-title">📄 Upload PDF</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with col2:
-    st.markdown(
-        """
-        <div class="step-card">
-            <div class="step-number">02</div>
-            <div class="step-title">📝 Extract Text</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with col3:
-    st.markdown(
-        """
-        <div class="step-card">
-            <div class="step-number">03</div>
-            <div class="step-title">🌐 Detect Language</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with col4:
-    st.markdown(
-        """
-        <div class="step-card">
-            <div class="step-number">04</div>
-            <div class="step-title">🎧 Create MP3</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-st.write("")
-
-
-# ============================================================
-# MAIN COLUMNS
-# ============================================================
-
-left, right = st.columns(
-    [1, 1.5],
-    gap="large"
+uploaded_file = st.file_uploader(
+    "Choose your PDF file",
+    type=["pdf"],
+    help="Upload a PDF document containing selectable text."
 )
 
 
 # ============================================================
-# LEFT PANEL
+# MAIN PROCESS
 # ============================================================
 
-with left:
+if uploaded_file is not None:
 
-    st.markdown(
-        '<div class="feature-card">',
-        unsafe_allow_html=True
-    )
+    file_size = uploaded_file.size
 
-    st.subheader("📄 Upload Your PDF")
+    col1, col2, col3 = st.columns(3)
 
-    uploaded_file = st.file_uploader(
-        "Choose a PDF document",
-        type=["pdf"],
-        help="Upload a text-based PDF file."
-    )
-
-    if uploaded_file:
-
-        st.success(
-            f"Uploaded: {uploaded_file.name}"
-        )
-
-        file_size = uploaded_file.size / 1024
-
-        st.write(
-            f"**File size:** {file_size:.2f} KB"
-        )
-
-    st.markdown(
-        "</div>",
-        unsafe_allow_html=True
-    )
-
-
-# ============================================================
-# RIGHT PANEL
-# ============================================================
-
-with right:
-
-    if not uploaded_file:
-
+    with col1:
         st.markdown(
-            """
-            <div class="feature-card">
-                <h2>🎙️ PDF → Audiobook</h2>
-                <p>
-                Upload a PDF from the left to begin.
-                The application will automatically extract
-                the text, detect the language and generate
-                an MP3 audiobook.
-                </p>
+            f"""
+            <div class="info-card">
+                <div class="info-label">📄 FILE NAME</div>
+                <div class="info-value">
+                    {uploaded_file.name}
+                </div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
-    else:
+    with col2:
+        size_kb = file_size / 1024
 
         st.markdown(
-            '<div class="feature-card">',
+            f"""
+            <div class="info-card">
+                <div class="info-label">📦 FILE SIZE</div>
+                <div class="info-value">
+                    {size_kb:.1f} KB
+                </div>
+            </div>
+            """,
             unsafe_allow_html=True
         )
 
-        st.subheader("⚙️ Convert PDF")
-
-        convert_button = st.button(
-            "🚀 Generate Audiobook",
-            type="primary",
-            use_container_width=True
-        )
-
+    with col3:
         st.markdown(
-            "</div>",
+            """
+            <div class="info-card">
+                <div class="info-label">📁 FILE TYPE</div>
+                <div class="info-value">
+                    PDF
+                </div>
+            </div>
+            """,
             unsafe_allow_html=True
         )
 
-        if convert_button:
 
-            # =================================================
-            # STEP 1 - EXTRACT TEXT
-            # =================================================
+    # ========================================================
+    # EXTRACT TEXT
+    # ========================================================
 
-            with st.spinner("📖 Extracting text from PDF..."):
+    st.markdown(
+        '<div class="section-title">📝 Extract Text</div>',
+        unsafe_allow_html=True
+    )
 
-                try:
+    with st.spinner("Extracting text from PDF..."):
 
-                    extracted_text = extract_text_from_pdf(
-                        uploaded_file
-                    )
+        try:
 
-                    extracted_text = clean_text(
-                        extracted_text
-                    )
+            reader = PdfReader(uploaded_file)
 
-                except Exception as error:
+            extracted_text = ""
 
-                    st.error(
-                        f"PDF extraction failed: {error}"
-                    )
+            for page in reader.pages:
 
-                    st.stop()
+                page_text = page.extract_text()
 
-            if not extracted_text:
+                if page_text:
+                    extracted_text += page_text + "\n"
 
-                st.error(
-                    "No readable text was found in this PDF."
-                )
+        except Exception as e:
 
-                st.info(
-                    "Please upload a text-based PDF. "
-                    "Scanned image-only PDFs may require OCR."
-                )
-
-                st.stop()
+            st.error(f"Unable to read PDF: {e}")
+            st.stop()
 
 
-            # =================================================
-            # STEP 2 - DETECT LANGUAGE
-            # =================================================
-
-            with st.spinner("🌐 Detecting language..."):
-
-                language = detect_language(
-                    extracted_text
-                )
+    extracted_text = extracted_text.strip()
 
 
-            # =================================================
-            # LANGUAGE NAME
-            # =================================================
+    if not extracted_text:
 
-            language_names = {
-                "en": "English",
-                "kn": "Kannada",
-                "hi": "Hindi",
-                "te": "Telugu",
-                "ta": "Tamil",
-                "ml": "Malayalam",
-                "bn": "Bengali"
-            }
+        st.error(
+            "No selectable text was found in this PDF. "
+            "Please upload a text-based PDF."
+        )
 
-            language_name = language_names.get(
-                language,
-                language
+        st.stop()
+
+
+    # ========================================================
+    # CLEAN TEXT
+    # ========================================================
+
+    cleaned_text = re.sub(
+        r"\s+",
+        " ",
+        extracted_text
+    ).strip()
+
+
+    # ========================================================
+    # TEXT PREVIEW
+    # ========================================================
+
+    with st.expander("👁️ Preview Extracted Text", expanded=False):
+
+        st.write(cleaned_text[:5000])
+
+        if len(cleaned_text) > 5000:
+            st.caption(
+                f"Showing first 5,000 characters "
+                f"of {len(cleaned_text):,} characters."
             )
 
 
-            # =================================================
-            # DISPLAY INFORMATION
-            # =================================================
+    # ========================================================
+    # LANGUAGE DETECTION
+    # ========================================================
+
+    st.markdown(
+        '<div class="section-title">🌐 Detect Language</div>',
+        unsafe_allow_html=True
+    )
+
+    try:
+
+        # Use a reasonable sample for detection.
+        # Avoid detecting from very small text.
+        detection_sample = cleaned_text[:5000]
+
+        detected_code = detect(detection_sample)
+
+        detected_name = LANGUAGE_NAMES.get(
+            detected_code.lower(),
+            detected_code.upper()
+        )
+
+    except LangDetectException:
+
+        detected_code = None
+        detected_name = "Not detected"
+
+    except Exception:
+
+        detected_code = None
+        detected_name = "Not detected"
+
+
+    if detected_code:
+
+        col1, col2 = st.columns(2)
+
+        with col1:
 
             st.markdown(
                 f"""
-                <div class="success-box">
-                    <strong>🌐 Detected Language:</strong>
-                    {language_name}
+                <div class="info-card">
+                    <div class="info-label">
+                        🌐 DETECTED LANGUAGE
+                    </div>
+
+                    <div class="info-value">
+                        {detected_name}
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True
             )
 
-            st.metric(
-                "Extracted Characters",
-                f"{len(extracted_text):,}"
+        with col2:
+
+            st.markdown(
+                f"""
+                <div class="info-card">
+                    <div class="info-label">
+                        🔤 LANGUAGE CODE
+                    </div>
+
+                    <div class="info-value">
+                        {detected_code}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
+    else:
 
-            # =================================================
-            # SHOW TEXT
-            # =================================================
-
-            with st.expander(
-                "📖 View Extracted Text"
-            ):
-
-                st.text_area(
-                    "PDF Text",
-                    extracted_text,
-                    height=300,
-                    label_visibility="collapsed"
-                )
+        st.warning(
+            "Language could not be detected automatically."
+        )
 
 
-            # =================================================
-            # STEP 3 - TEXT TO SPEECH
-            # =================================================
+    # ========================================================
+    # AUDIO GENERATION
+    # ========================================================
 
-            with st.spinner(
-                "🎧 Converting text to speech..."
-            ):
+    st.markdown(
+        '<div class="section-title">🎙️ Create Audiobook</div>',
+        unsafe_allow_html=True
+    )
 
-                try:
+    if detected_code:
 
-                    audio_file = create_audio(
-                        extracted_text,
-                        language
-                    )
+        st.info(
+            f"Speech will be generated using the detected language: "
+            f"**{detected_name} ({detected_code})**"
+        )
 
-                except Exception as error:
+        generate_button = st.button(
+            "🎧 Generate MP3 Audiobook",
+            use_container_width=True,
+            type="primary"
+        )
 
-                    st.error(
-                        f"Audio generation failed: {error}"
-                    )
+        if generate_button:
 
-                    st.stop()
+            progress = st.progress(0)
 
-
-            # =================================================
-            # AUDIO PLAYER
-            # =================================================
-
-            st.success(
-                "✅ Audiobook created successfully!"
-            )
-
-            st.subheader(
-                "🎧 Your Audiobook"
-            )
-
-            with open(
-                audio_file,
-                "rb"
-            ) as audio:
-
-                audio_bytes = audio.read()
-
-            st.audio(
-                audio_bytes,
-                format="audio/mp3"
-            )
-
-
-            # =================================================
-            # DOWNLOAD BUTTON
-            # =================================================
-
-            output_name = os.path.splitext(
-                uploaded_file.name
-            )[0]
-
-            output_name = (
-                output_name
-                + "_audiobook.mp3"
-            )
-
-            st.download_button(
-                label="⬇️ Download MP3 Audiobook",
-                data=audio_bytes,
-                file_name=output_name,
-                mime="audio/mpeg",
-                use_container_width=True
-            )
-
-
-            # =================================================
-            # CLEAN TEMP FILE
-            # =================================================
+            status = st.empty()
 
             try:
 
-                os.remove(audio_file)
+                # ------------------------------------------------
+                # Split text into manageable chunks
+                # ------------------------------------------------
 
-            except Exception:
+                max_chars = 4500
 
-                pass
+                chunks = []
+
+                current_chunk = ""
+
+                sentences = re.split(
+                    r"(?<=[.!?।॥])\s+",
+                    cleaned_text
+                )
+
+                for sentence in sentences:
+
+                    sentence = sentence.strip()
+
+                    if not sentence:
+                        continue
+
+                    if len(current_chunk) + len(sentence) + 1 <= max_chars:
+
+                        if current_chunk:
+                            current_chunk += " "
+
+                        current_chunk += sentence
+
+                    else:
+
+                        if current_chunk:
+                            chunks.append(current_chunk)
+
+                        current_chunk = sentence
+
+                if current_chunk:
+                    chunks.append(current_chunk)
+
+
+                # ------------------------------------------------
+                # Generate MP3 chunks
+                # ------------------------------------------------
+
+                audio_parts = []
+
+                total_chunks = len(chunks)
+
+                for index, chunk in enumerate(chunks):
+
+                    status.write(
+                        f"🎙️ Generating audio "
+                        f"part {index + 1} of {total_chunks}..."
+                    )
+
+                    audio_buffer = BytesIO()
+
+                    tts = gTTS(
+                        text=chunk,
+                        lang=detected_code,
+                        slow=False
+                    )
+
+                    tts.write_to_fp(audio_buffer)
+
+                    audio_parts.append(
+                        audio_buffer.getvalue()
+                    )
+
+                    progress_value = int(
+                        ((index + 1) / total_chunks) * 100
+                    )
+
+                    progress.progress(progress_value)
+
+
+                # ------------------------------------------------
+                # Combine MP3 binary data
+                # ------------------------------------------------
+
+                final_audio = BytesIO()
+
+                for part in audio_parts:
+                    final_audio.write(part)
+
+                final_audio.seek(0)
+
+
+                # ------------------------------------------------
+                # Store result
+                # ------------------------------------------------
+
+                st.session_state["audio_data"] = (
+                    final_audio.getvalue()
+                )
+
+                st.session_state["audio_name"] = (
+                    uploaded_file.name.rsplit(
+                        ".",
+                        1
+                    )[0]
+                    + "_audiobook.mp3"
+                )
+
+                status.success(
+                    "🎉 Audiobook generated successfully!"
+                )
+
+                progress.progress(100)
+
+
+            except Exception as e:
+
+                progress.empty()
+                status.empty()
+
+                st.error(
+                    f"Audio generation failed: {e}"
+                )
+
+
+    else:
+
+        st.warning(
+            "Audiobook generation requires a detected language."
+        )
+
+
+# ============================================================
+# DOWNLOAD SECTION
+# ============================================================
+
+if "audio_data" in st.session_state:
+
+    st.markdown(
+        """
+        <div class="success-box">
+
+            <div class="success-title">
+                🎉 Your Audiobook is Ready!
+            </div>
+
+            <div class="success-text">
+                The PDF has been converted into an MP3 audiobook.
+                You can listen to it online or download it.
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown("### 🎧 Preview Audio")
+
+    st.audio(
+        st.session_state["audio_data"],
+        format="audio/mp3"
+    )
+
+    st.download_button(
+        label="⬇️ Download MP3 Audiobook",
+        data=st.session_state["audio_data"],
+        file_name=st.session_state["audio_name"],
+        mime="audio/mpeg",
+        use_container_width=True
+    )
 
 
 # ============================================================
 # FOOTER
 # ============================================================
 
-st.write("")
-
 st.markdown(
     """
-    <div style="text-align:center; color:#667085; padding:25px;">
+    <div class="footer">
+
         🎧 <b>PragyanAI PDF Audiobook Creator</b>
+
         <br>
-        PDF → Text → Language Detection → Speech → MP3
+
+        PDF → Extract Text → Detect Language → Speech → MP3
+
+        <br><br>
+
+        Built with Python + Streamlit + PyPDF + gTTS
+
     </div>
     """,
     unsafe_allow_html=True
