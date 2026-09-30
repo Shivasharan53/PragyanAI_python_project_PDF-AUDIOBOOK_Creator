@@ -26,7 +26,7 @@ st.markdown(
     <style>
 
     .stApp {
-        background: #f5f7fb;
+        background: #F1F5F9;
     }
 
     .main-title {
@@ -42,7 +42,7 @@ st.markdown(
     }
 
     .feature-card {
-        background: white;
+        background: Black;
         padding: 22px;
         border-radius: 16px;
         border: 1px solid #e4e7ec;
@@ -50,7 +50,7 @@ st.markdown(
     }
 
     .step-card {
-        background: white;
+        background: Black;
         padding: 18px;
         border-radius: 14px;
         border: 1px solid #e4e7ec;
